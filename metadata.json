@@ -1,0 +1,6 @@
+{
+  "name": "Top Bencher AI",
+  "description": "Uncompromising AI study operating system for top benchers: multi-source document ingestion, handwritten note OCR, adaptive quizzes with step-by-step mistake diagnostics, spaced repetition scheduling, and Feynman technique simplicity evaluator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

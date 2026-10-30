@@ -1,0 +1,338 @@
+import React, { useState } from 'react';
+import {
+  Baby,
+  Brain,
+  Sparkles,
+  AlertOctagon,
+  CheckCircle2,
+  Lightbulb,
+  BookOpen,
+  RotateCcw,
+  Zap,
+  FileText,
+} from 'lucide-react';
+import { DocumentItem, FeynmanCritique } from '../types';
+import { evaluateFeynmanExplanation } from '../utils/studyEngine';
+
+interface FeynmanSimplifierProps {
+  documents: DocumentItem[];
+  preselectedTopic?: string;
+  onSaveAnalysis?: (critique: FeynmanCritique, topic: string, explanation: string) => void;
+}
+
+export const FeynmanSimplifier: React.FC<FeynmanSimplifierProps> = ({
+  documents,
+  preselectedTopic,
+  onSaveAnalysis,
+}) => {
+  const [topic, setTopic] = useState<string>(
+    preselectedTopic || (documents[0] ? documents[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') : '')
+  );
+  const [selectedDocId, setSelectedDocId] = useState<string>(documents[0]?.id || '');
+  const [explanation, setExplanation] = useState<string>('');
+  const [critique, setCritique] = useState<FeynmanCritique | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+
+  const selectedDoc = documents.find((d) => d.id === selectedDocId) || documents[0];
+
+  const handleSelectDoc = (doc: DocumentItem) => {
+    setSelectedDocId(doc.id);
+    const cleanTopic = doc.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    setTopic(cleanTopic);
+  };
+
+  const handleRunEvaluation = () => {
+    if (!explanation.trim()) return;
+    const currentTopic = topic.trim() || selectedDoc?.name || 'Uploaded Concept';
+
+    setIsAnalyzing(true);
+    setTimeout(() => {
+      const result = evaluateFeynmanExplanation(explanation, currentTopic, selectedDoc?.content);
+      setCritique(result);
+      setIsAnalyzing(false);
+      if (onSaveAnalysis) {
+        onSaveAnalysis(result, currentTopic, explanation);
+      }
+    }, 500);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Hero Card */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-violet-600/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="inline-flex items-center space-x-2 text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">
+          <Baby className="w-3.5 h-3.5" />
+          <span>Component 5: Feynman Technique Simplification Engine</span>
+        </div>
+        <h1 className="text-2xl font-bold text-white tracking-tight">
+          "If you can't explain it to a six-year-old, you don't understand it yourself."
+        </h1>
+        <p className="text-sm text-slate-400 mt-1 max-w-3xl">
+          Richard Feynman’s ultimate litmus test. Explain any uploaded concept using simple everyday vernacular and
+          sensory analogies. The engine verifies your explanation against your uploaded text, detects jargon crutches,
+          and generates a 1st-standard translation.
+        </p>
+
+        {/* Dynamic Topic Selector from Uploaded Files */}
+        {documents.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-slate-800/80">
+            <div className="text-xs font-semibold text-slate-300 mb-2 flex items-center space-x-1.5">
+              <FileText className="w-3.5 h-3.5 text-violet-400" />
+              <span>Target an Uploaded Document:</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {documents.map((doc) => {
+                const clean = doc.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+                const isSelected = selectedDocId === doc.id;
+                return (
+                  <button
+                    key={doc.id}
+                    onClick={() => handleSelectDoc(doc)}
+                    className={`px-3 py-1.5 rounded-lg border text-xs transition-all flex items-center space-x-1.5 cursor-pointer ${
+                      isSelected
+                        ? 'bg-violet-950/70 border-violet-500 text-white font-semibold ring-1 ring-violet-500/30'
+                        : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}
+                  >
+                    <span>{clean}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-900 text-violet-300 border border-slate-800">
+                      {doc.subject}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Input Form */}
+        <div className="lg:col-span-6 space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                Target Topic / Concept
+              </label>
+              <input
+                type="text"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="Enter any concept from your uploaded documents (e.g. Newton's Third Law, Anaphora, BST Traversal)..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-violet-500 font-medium"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Your Plain-Language Explanation (As If Teaching a 6-Year-Old)
+                </label>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  {explanation.trim() ? explanation.trim().split(/\s+/).length : 0} words
+                </span>
+              </div>
+              <textarea
+                rows={7}
+                value={explanation}
+                onChange={(e) => setExplanation(e.target.value)}
+                placeholder="Explain the idea simply using an analogy: 'Think of a toy box...', 'Imagine water rolling down a hill...', 'Like a game where kids pass a ball...'. Avoid textbook jargon!"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-violet-500 leading-relaxed font-sans"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2 pt-1">
+              <button
+                onClick={handleRunEvaluation}
+                disabled={isAnalyzing || !explanation.trim()}
+                className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+                  isAnalyzing || !explanation.trim()
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-lg shadow-violet-600/30'
+                }`}
+              >
+                {isAnalyzing ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Analyzing Clarity, Jargon & Uploaded Alignment...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    <span>Run Feynman Critique & Audit</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setExplanation('');
+                  setCritique(null);
+                }}
+                className="p-3 rounded-xl bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Reset Input"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Analytical Critique Panel */}
+        <div className="lg:col-span-6 space-y-4">
+          {critique ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-5">
+              {/* Verdict Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Evaluation Verdict
+                  </span>
+                  <div className="flex items-center space-x-2 mt-0.5">
+                    {critique.verdict === 'MASTERED' && (
+                      <span className="text-sm font-extrabold text-emerald-400 flex items-center space-x-1">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>FEYNMAN MASTERY ACHIEVED</span>
+                      </span>
+                    )}
+                    {critique.verdict === 'DEVELOPING' && (
+                      <span className="text-sm font-extrabold text-amber-400 flex items-center space-x-1">
+                        <Lightbulb className="w-4 h-4" />
+                        <span>DEVELOPING INTUITION</span>
+                      </span>
+                    )}
+                    {critique.verdict === 'RE-EXPLAIN_REQUIRED' && (
+                      <span className="text-sm font-extrabold text-red-400 flex items-center space-x-1">
+                        <AlertOctagon className="w-4 h-4" />
+                        <span>RE-EXPLANATION REQUIRED (JARGON OVERLOAD)</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-2xl font-black text-white">{critique.overallScore}/100</div>
+                  <div className="text-[10px] text-slate-400">Cognitive Score</div>
+                </div>
+              </div>
+
+              {/* Child Analogy Grade */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-slate-400 uppercase font-semibold">Child Analogy Grade</div>
+                  <div className="text-sm font-bold text-violet-300 mt-0.5">{critique.childAnalogyGrade}</div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-violet-950 border border-violet-800 flex items-center justify-center text-violet-300 font-black text-base">
+                  {critique.childAnalogyGrade.charAt(6)}
+                </div>
+              </div>
+
+              {/* Score Bars */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="flex justify-between text-slate-400 mb-1">
+                    <span>Clarity Index</span>
+                    <span className="font-bold text-white">{critique.clarityScore}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 rounded-full"
+                      style={{ width: `${critique.clarityScore}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                  <div className="flex justify-between text-slate-400 mb-1">
+                    <span>Simplicity Index</span>
+                    <span className="font-bold text-white">{critique.simplicityScore}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-violet-500 rounded-full"
+                      style={{ width: `${critique.simplicityScore}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Jargon Penalty Meter */}
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-red-400 uppercase tracking-wider flex items-center space-x-1">
+                    <AlertOctagon className="w-3.5 h-3.5" />
+                    <span>Jargon Penalty Meter (-{critique.jargonPenaltyScore} pts)</span>
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {critique.identifiedJargons.length === 0
+                      ? 'Zero Jargon Detected (Clean)'
+                      : `${critique.identifiedJargons.length} Terms Identified`}
+                  </span>
+                </div>
+
+                {critique.identifiedJargons.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {critique.identifiedJargons.map((word, i) => (
+                      <span
+                        key={i}
+                        className="px-2 py-0.5 rounded text-[11px] font-mono bg-red-950 text-red-300 border border-red-800"
+                      >
+                        ⚠️ "{word}"
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-emerald-400">
+                    Excellent discipline: No obscure technical buzzwords used as crutches.
+                  </p>
+                )}
+              </div>
+
+              {/* Conceptual Gaps & Misunderstandings */}
+              {(critique.conceptualGaps.length > 0 || critique.misunderstandings.length > 0) && (
+                <div className="space-y-2 text-xs">
+                  <span className="font-bold text-amber-400 uppercase tracking-wider block">
+                    Gaps & Misunderstandings Identified:
+                  </span>
+                  <div className="space-y-1.5">
+                    {critique.conceptualGaps.map((gap, i) => (
+                      <div key={i} className="p-2.5 rounded bg-amber-950/20 border border-amber-900/60 text-amber-200">
+                        • {gap}
+                      </div>
+                    ))}
+                    {critique.misunderstandings.map((err, i) => (
+                      <div key={i} className="p-2.5 rounded bg-red-950/20 border border-red-900/60 text-red-200">
+                        • {err}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Top Bencher ELI5 Reference Transformed Version */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-950/40 to-violet-950/40 border border-indigo-700/60 space-y-2">
+                <div className="flex items-center space-x-1.5 text-xs font-bold text-indigo-300 uppercase tracking-wider">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Top Bencher AI — ELI5 Master Analogy:</span>
+                </div>
+                <p className="text-xs text-slate-200 leading-relaxed italic font-serif">
+                  "{critique.eli5SimplifiedVersion}"
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-slate-500 text-xs shadow-lg h-full flex flex-col items-center justify-center space-y-3">
+              <Baby className="w-12 h-12 text-slate-700" />
+              <div className="font-bold text-slate-400 text-sm">Awaiting Explanation Submission</div>
+              <p className="max-w-sm text-slate-500">
+                Write an explanation as if teaching a first-grader. The Feynman engine will grade clarity, detect
+                jargon words, identify conceptual gaps, and provide an ELI5 translation.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};

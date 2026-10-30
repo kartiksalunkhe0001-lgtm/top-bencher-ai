@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile information stored at root of user document",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 256 },
+        "photoURL": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLoginAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "StudyFile": {
+      "title": "StudyFile",
+      "description": "Cloud synchronized uploaded study notes or extracted handwritten documents",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 256 },
+        "type": { "type": "string", "maxLength": 64 },
+        "size": { "type": "number" },
+        "extractedContent": { "type": "string", "maxLength": 500000 },
+        "uploadedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name", "type", "extractedContent"]
+    },
+    "QuizAttempt": {
+      "title": "QuizAttempt",
+      "description": "Completed interactive quiz session with time spent analytics per question",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "subject": { "type": "string", "maxLength": 64 },
+        "format": { "type": "string", "maxLength": 64 },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "totalDurationSeconds": { "type": "number" },
+        "questionLogs": { "type": "string", "maxLength": 500000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "subject", "format", "score", "totalQuestions", "totalDurationSeconds", "questionLogs"]
+    },
+    "SpacedSchedule": {
+      "title": "SpacedSchedule",
+      "description": "Spaced repetition intervals and retention status for topics needing attention",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "topicName": { "type": "string", "maxLength": 128 },
+        "subject": { "type": "string", "maxLength": 64 },
+        "attentionLevel": { "type": "string", "enum": ["High Attention Needed", "Some Attention Needed", "Low Attention Needed"] },
+        "lastScore": { "type": "number" },
+        "reviewIntervalDays": { "type": "number" },
+        "nextReviewDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "topicName", "subject", "attentionLevel", "lastScore", "reviewIntervalDays", "nextReviewDate"]
+    },
+    "FeynmanAnalysis": {
+      "title": "FeynmanAnalysis",
+      "description": "Feynman technique plain-vernacular explanation and critique analysis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "conceptName": { "type": "string", "maxLength": 128 },
+        "userExplanation": { "type": "string", "maxLength": 10000 },
+        "clarityScore": { "type": "number" },
+        "grade": { "type": "string", "maxLength": 32 },
+        "analysisJson": { "type": "string", "maxLength": 100000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "conceptName", "userExplanation", "clarityScore", "grade", "analysisJson"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile document isolated per user"
+    },
+    "/users/{userId}/files/{fileId}": {
+      "schema": "StudyFile",
+      "description": "Cloud synchronized user study files and extracted OCR content"
+    },
+    "/users/{userId}/quizAttempts/{attemptId}": {
+      "schema": "QuizAttempt",
+      "description": "Quiz attempt records with granular time spent analytics"
+    },
+    "/users/{userId}/spacedSchedules/{topicId}": {
+      "schema": "SpacedSchedule",
+      "description": "Scientific spaced repetition retention schedules"
+    },
+    "/users/{userId}/feynmanAnalyses/{analysisId}": {
+      "schema": "FeynmanAnalysis",
+      "description": "Feynman technique simplifications and evaluations"
+    }
+  }
+}
