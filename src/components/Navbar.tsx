@@ -17,6 +17,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
+import { AppUser } from '../types';
 
 export type ActiveTab =
   | 'ingestion'
@@ -34,7 +35,7 @@ interface NavbarProps {
   ingestedCount: number;
   highAttentionCount: number;
   averageScore: number;
-  user: User | null;
+  user: (User | AppUser) | null;
   syncStatus: 'synced' | 'syncing' | 'offline' | 'guest';
   onSignIn: () => void;
   onSignOut: () => void;

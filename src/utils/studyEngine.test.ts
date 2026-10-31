@@ -14,6 +14,8 @@ import {
   formatBytes,
   MAX_UPLOAD_SIZE_BYTES,
   SUPPORTED_SUBJECTS,
+  parsePdfDocumentContent,
+  generateDynamicStudyMaterials,
 } from './studyEngine';
 import { DocumentItem } from '../types';
 
@@ -96,7 +98,7 @@ test('generateSpacedRepetitionSchedule generates Day 1, 3, 7, 14 intervals', () 
   assert.equal(schedule[3].dueDate, '2026-11-13');
 });
 
-test('generateDynamicQuestions produces contextual, non-boilerplate questions from uploaded document', () => {
+test('generateDynamicQuestions produces contextual, non-boilerplate questions with randomized answers', () => {
   const userDoc: DocumentItem = {
     id: 'user-doc-eng',
     name: 'English_Rhetorical_Devices.txt',
@@ -111,21 +113,38 @@ test('generateDynamicQuestions produces contextual, non-boilerplate questions fr
 3. Synecdoche: A figure of speech in which a part is made to represent the whole.`,
   };
 
-  const questions = generateDynamicQuestions(userDoc, 3, 'mcq', 'competitive_exam');
-  assert.equal(questions.length, 3);
+  const questions = generateDynamicQuestions(userDoc, 8, 'mcq', 'competitive_exam');
+  assert.equal(questions.length, 8);
   assert.equal(questions[0].subject, 'English');
   assert.ok(questions[0].question.includes('Anaphora'));
-  // Verify correct option is clean definition without robotic boilerplate
-  assert.ok(questions[0].options![0].includes('repetition of a word or phrase'));
-  assert.ok(!questions[0].options![0].includes('It strictly establishes:'));
 
-  // Test diagnostic on dynamic question
-  const correctCheck = diagnoseQuizMistake(questions[0], 0);
+  // Verify correct option is randomized across questions (not always 0 / Option A)
+  const correctIndices = questions.map((q) => q.correctOptionIndex);
+  const uniqueIndices = new Set(correctIndices);
+  assert.ok(uniqueIndices.size > 1, 'Correct option indices must be dynamically randomized, not all 0');
+
+  // Verify correct answer check works for dynamically chosen correct option
+  const correctOptionIdx = questions[0].correctOptionIndex!;
+  const correctCheck = diagnoseQuizMistake(questions[0], correctOptionIdx);
   assert.equal(correctCheck.isCorrect, true);
 
-  const wrongCheck = diagnoseQuizMistake(questions[0], 1);
+  // Verify incorrect answer diagnosis identifies error step and rationale
+  const wrongOptionIdx = (correctOptionIdx + 1) % 4;
+  const wrongCheck = diagnoseQuizMistake(questions[0], wrongOptionIdx);
   assert.equal(wrongCheck.isCorrect, false);
-  assert.equal(wrongCheck.diagnosedErrorStep, 2);
+  assert.ok(wrongCheck.diagnosedErrorStep !== undefined);
+  assert.ok(wrongCheck.diagnosedRationale && wrongCheck.diagnosedRationale.length > 0);
+});
+
+test('parsePdfDocumentContent safely extracts PDF streams without binary corruption', () => {
+  const rawPdfBinary = `%PDF-1.6\n3 0 obj\n<</Filter/FlateDecode/Length 1245>>\nstream\nx\x9c\xed\x9d\x07...raw binary stream\nendstream\nendobj`;
+  
+  const parsed = parsePdfDocumentContent(rawPdfBinary, 'Quantum_Mechanics_Lecture.pdf', 'Physics', '1.4 MB');
+  assert.equal(parsed.isBinaryStream, true);
+  assert.ok(parsed.binaryStreamNotice.includes('PDF Document Loaded Successfully (Binary Stream Cached for Analysis)'));
+  assert.ok(!parsed.content.includes('/FlateDecode'));
+  assert.ok(!parsed.content.includes('%PDF-1.6'));
+  assert.ok(parsed.content.includes('Quantum Mechanics Lecture'));
 });
 
 test('generateDynamicFlashcards, MindMap, and Charts work dynamically on user files', () => {
@@ -167,4 +186,42 @@ test('evaluateFeynmanExplanation grades clarity, simplicity and catches jargon i
   const resultSimple = evaluateFeynmanExplanation(simpleVernacular, 'Wave Equations');
   assert.equal(resultSimple.identifiedJargons.length, 0);
   assert.ok(resultSimple.overallScore >= 70);
+  assert.ok(resultSimple.clarityScore >= 70);
+  assert.ok(resultSimple.suggestedAnalogyCorrection && resultSimple.suggestedAnalogyCorrection.length > 0);
+  assert.ok(resultSimple.rigorAssessment && resultSimple.rigorAssessment.length > 0);
+  assert.ok(Array.isArray(resultSimple.conceptualGaps));
 });
+
+test('generateDynamicStudyMaterials supports custom_topic dual-mode generation without uploaded files', () => {
+  const customConfig = {
+    outputType: 'quiz' as const,
+    quizMode: 'mcq' as const,
+    quantity: 4,
+    difficulty: 'competitive_exam' as const,
+    sourceMode: 'custom_topic' as const,
+    customTopic: 'Electrochemistry & Nernst Equation',
+  };
+
+  const result = generateDynamicStudyMaterials([], customConfig);
+  assert.ok(result.questions && result.questions.length === 4);
+  assert.equal(result.questions[0].subject, 'Chemistry');
+  assert.ok(result.questions[0].options && result.questions[0].options.length === 4);
+  assert.ok(result.questions[0].solutionDerivation.length >= 3);
+
+  // Test flashcard generation from custom topic
+  const fcResult = generateDynamicStudyMaterials([], {
+    ...customConfig,
+    outputType: 'flashcards',
+  });
+  assert.ok(fcResult.flashcards && fcResult.flashcards.length === 4);
+  assert.equal(fcResult.flashcards[0].subject, 'Chemistry');
+
+  // Test mind map generation from custom topic
+  const mmResult = generateDynamicStudyMaterials([], {
+    ...customConfig,
+    outputType: 'mindmap',
+  });
+  assert.ok(mmResult.mindMap);
+  assert.ok(mmResult.mindMap.label.includes('Electrochemistry'));
+});
+

@@ -12,11 +12,16 @@ export interface DocumentItem {
   imageUrl?: string;
   uploadDate: string;
   tags: string[];
+  isBinaryStream?: boolean;
+  binaryStreamNotice?: string;
 }
 
 export type OutputType = 'quiz' | 'flashcards' | 'mindmap' | 'charts';
 export type QuizMode = 'mcq' | 'subjective' | 'mixed';
 export type DifficultyLevel = 'fundamental' | 'competitive_exam' | 'olympiad_research';
+export type FeedbackTiming = 'instant' | 'after_test';
+
+export type GenerationSourceMode = 'files' | 'custom_topic';
 
 export interface StudyConfig {
   outputType: OutputType;
@@ -24,6 +29,9 @@ export interface StudyConfig {
   quantity: number;
   difficulty: DifficultyLevel;
   focusSubject?: string;
+  feedbackTiming?: FeedbackTiming;
+  sourceMode?: GenerationSourceMode;
+  customTopic?: string;
 }
 
 export interface SolutionStep {
@@ -76,6 +84,7 @@ export interface QuizSessionResult {
   totalDurationSeconds: number;
   questionTimes: Record<number, number>;
   submissions: Record<number, QuizSubmission>;
+  feedbackTiming?: FeedbackTiming;
 }
 
 export interface Flashcard {
@@ -148,5 +157,24 @@ export interface FeynmanCritique {
   misunderstandings: string[];
   childAnalogyGrade: string;
   eli5SimplifiedVersion: string;
+  suggestedAnalogyCorrection: string;
+  rigorAssessment: string;
   verdict: 'MASTERED' | 'DEVELOPING' | 'RE-EXPLAIN_REQUIRED';
+}
+
+export interface AppUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  emailVerified?: boolean;
+  isScholarSandbox?: boolean;
+}
+
+export interface AuthDomainConfigInfo {
+  isUnauthorizedDomain: boolean;
+  currentDomain: string;
+  projectId: string;
+  consoleUrl: string;
+  userEmail?: string;
 }

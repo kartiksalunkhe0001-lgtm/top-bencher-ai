@@ -19,6 +19,10 @@ export function sanitizeDocId(rawId: string): string {
   return cleaned.slice(0, 120) || `id_${Date.now()}`;
 }
 
+function isScholarSandbox(userId: string): boolean {
+  return userId.startsWith('scholar_') || userId.startsWith('demo_');
+}
+
 // -----------------------------------------------------------------------------
 // 1. CLOUD FILE STORAGE & SYNC
 // -----------------------------------------------------------------------------
@@ -45,6 +49,28 @@ export async function saveUserFile(userId: string, docItem: DocumentItem): Promi
     }
   }
 
+  // Handle Scholar Sandbox mode or offline fallback
+  if (isScholarSandbox(userId)) {
+    try {
+      const key = `topbencher_scholar_files_${userId}`;
+      const existing: DocumentItem[] = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = existing.filter((f) => f.id !== safeFileId);
+      filtered.unshift({
+        ...docItem,
+        id: safeFileId,
+        sizeBytes: numBytes,
+        size: formatBytes(numBytes),
+        tags: [...(docItem.tags || []), 'Scholar Sandbox'],
+      });
+      localStorage.setItem(key, JSON.stringify(filtered));
+      window.dispatchEvent(new CustomEvent(`scholar_files_changed_${userId}`, { detail: filtered }));
+      return;
+    } catch (e) {
+      console.warn('Local scholar storage write failed:', e);
+      return;
+    }
+  }
+
   try {
     const fileRef = doc(db, 'users', userId, 'files', safeFileId);
     await setDoc(fileRef, {
@@ -66,6 +92,19 @@ export async function deleteUserFile(userId: string, fileId: string): Promise<vo
   const safeFileId = sanitizeDocId(fileId);
   const path = `users/${userId}/files/${safeFileId}`;
 
+  if (isScholarSandbox(userId)) {
+    try {
+      const key = `topbencher_scholar_files_${userId}`;
+      const existing: DocumentItem[] = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = existing.filter((f) => f.id !== safeFileId);
+      localStorage.setItem(key, JSON.stringify(filtered));
+      window.dispatchEvent(new CustomEvent(`scholar_files_changed_${userId}`, { detail: filtered }));
+      return;
+    } catch {
+      return;
+    }
+  }
+
   try {
     const fileRef = doc(db, 'users', userId, 'files', safeFileId);
     await deleteDoc(fileRef);
@@ -79,6 +118,34 @@ export function subscribeUserFiles(
   onUpdate: (files: DocumentItem[]) => void,
   onError?: (err: any) => void
 ): Unsubscribe {
+  if (isScholarSandbox(userId)) {
+    const key = `topbencher_scholar_files_${userId}`;
+    const loadFiles = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(key) || '[]');
+        onUpdate(stored);
+      } catch {
+        onUpdate([]);
+      }
+    };
+    loadFiles();
+
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<DocumentItem[]>;
+      if (custom.detail) {
+        onUpdate(custom.detail);
+      } else {
+        loadFiles();
+      }
+    };
+
+    const eventName = `scholar_files_changed_${userId}`;
+    window.addEventListener(eventName, handler);
+    return () => {
+      window.removeEventListener(eventName, handler);
+    };
+  }
+
   const path = `users/${userId}/files`;
   const filesCol = collection(db, 'users', userId, 'files');
 
@@ -126,6 +193,23 @@ export async function saveQuizAttempt(userId: string, result: QuizSessionResult)
   const safeId = sanitizeDocId(`quiz_${Date.now()}`);
   const path = `users/${userId}/quizAttempts/${safeId}`;
 
+  if (isScholarSandbox(userId)) {
+    try {
+      const key = `topbencher_scholar_attempts_${userId}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      existing.unshift({
+        id: safeId,
+        userId,
+        result,
+        createdAt: new Date().toISOString(),
+      });
+      localStorage.setItem(key, JSON.stringify(existing.slice(0, 50)));
+      return;
+    } catch {
+      return;
+    }
+  }
+
   try {
     const quizRef = doc(db, 'users', userId, 'quizAttempts', safeId);
     await setDoc(quizRef, {
@@ -138,9 +222,8 @@ export async function saveQuizAttempt(userId: string, result: QuizSessionResult)
       totalDurationSeconds: result.totalDurationSeconds || 0,
       questionLogs: JSON.stringify({
         questionTimes: result.questionTimes || {},
-        submissions: result.submissions || {},
-        correct: result.correct,
-      }).slice(0, 480000),
+        feedbackTiming: result.feedbackTiming || 'instant',
+      }),
       createdAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -153,6 +236,17 @@ export function subscribeQuizAttempts(
   onUpdate: (attempts: any[]) => void,
   onError?: (err: any) => void
 ): Unsubscribe {
+  if (isScholarSandbox(userId)) {
+    const key = `topbencher_scholar_attempts_${userId}`;
+    try {
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      onUpdate(existing);
+    } catch {
+      onUpdate([]);
+    }
+    return () => {};
+  }
+
   const path = `users/${userId}/quizAttempts`;
   const colRef = collection(db, 'users', userId, 'quizAttempts');
 
@@ -182,6 +276,20 @@ export function subscribeQuizAttempts(
 export async function saveSpacedSchedule(userId: string, record: TopicRetentionRecord): Promise<void> {
   const safeTopicId = sanitizeDocId(record.id || `topic_${Date.now()}`);
   const path = `users/${userId}/spacedSchedules/${safeTopicId}`;
+
+  if (isScholarSandbox(userId)) {
+    try {
+      const key = `topbencher_scholar_schedules_${userId}`;
+      const existing: TopicRetentionRecord[] = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = existing.filter((r) => r.id !== record.id);
+      filtered.unshift(record);
+      localStorage.setItem(key, JSON.stringify(filtered));
+      window.dispatchEvent(new CustomEvent(`scholar_schedules_changed_${userId}`, { detail: filtered }));
+      return;
+    } catch {
+      return;
+    }
+  }
 
   try {
     const recordRef = doc(db, 'users', userId, 'spacedSchedules', safeTopicId);
@@ -214,6 +322,34 @@ export function subscribeSpacedSchedules(
   onUpdate: (records: TopicRetentionRecord[]) => void,
   onError?: (err: any) => void
 ): Unsubscribe {
+  if (isScholarSandbox(userId)) {
+    const key = `topbencher_scholar_schedules_${userId}`;
+    const loadSchedules = () => {
+      try {
+        const stored = JSON.parse(localStorage.getItem(key) || '[]');
+        onUpdate(stored);
+      } catch {
+        onUpdate([]);
+      }
+    };
+    loadSchedules();
+
+    const handler = (event: Event) => {
+      const custom = event as CustomEvent<TopicRetentionRecord[]>;
+      if (custom.detail) {
+        onUpdate(custom.detail);
+      } else {
+        loadSchedules();
+      }
+    };
+
+    const eventName = `scholar_schedules_changed_${userId}`;
+    window.addEventListener(eventName, handler);
+    return () => {
+      window.removeEventListener(eventName, handler);
+    };
+  }
+
   const path = `users/${userId}/spacedSchedules`;
   const colRef = collection(db, 'users', userId, 'spacedSchedules');
 
@@ -261,12 +397,12 @@ export function subscribeSpacedSchedules(
 }
 
 // -----------------------------------------------------------------------------
-// 4. FEYNMAN TECHNIQUE ANALYSES
+// 4. FEYNMAN CRITIQUES PERSISTENCE
 // -----------------------------------------------------------------------------
 
 export async function saveFeynmanAnalysis(
   userId: string,
-  data: {
+  analysis: {
     conceptName: string;
     userExplanation: string;
     critique: FeynmanCritique;
@@ -275,16 +411,32 @@ export async function saveFeynmanAnalysis(
   const safeId = sanitizeDocId(`feynman_${Date.now()}`);
   const path = `users/${userId}/feynmanAnalyses/${safeId}`;
 
+  if (isScholarSandbox(userId)) {
+    try {
+      const key = `topbencher_scholar_feynman_${userId}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      existing.unshift({
+        id: safeId,
+        ...analysis,
+        createdAt: new Date().toISOString(),
+      });
+      localStorage.setItem(key, JSON.stringify(existing.slice(0, 30)));
+      return;
+    } catch {
+      return;
+    }
+  }
+
   try {
     const analysisRef = doc(db, 'users', userId, 'feynmanAnalyses', safeId);
     await setDoc(analysisRef, {
       id: safeId,
       userId: userId,
-      conceptName: data.conceptName.slice(0, 120),
-      userExplanation: data.userExplanation.slice(0, 9500),
-      clarityScore: data.critique.clarityScore || 0,
-      grade: (data.critique.childAnalogyGrade || data.critique.verdict || 'A').slice(0, 30),
-      analysisJson: JSON.stringify(data.critique).slice(0, 95000),
+      conceptName: analysis.conceptName.slice(0, 120),
+      userExplanation: analysis.userExplanation.slice(0, 9500),
+      clarityScore: analysis.critique.clarityScore,
+      grade: analysis.critique.childAnalogyGrade.slice(0, 30),
+      analysisJson: JSON.stringify(analysis.critique).slice(0, 95000),
       createdAt: new Date().toISOString(),
     });
   } catch (error) {

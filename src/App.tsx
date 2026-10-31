@@ -29,15 +29,26 @@ import {
   StudyConfig,
   TopicRetentionRecord,
   FeynmanCritique,
+  FeedbackTiming,
 } from './types';
 import {
   generateDynamicStudyMaterials,
   generateSpacedRepetitionSchedule,
 } from './utils/studyEngine';
-import { Cloud, ShieldCheck, Sparkles } from 'lucide-react';
+import { DomainAuthModal } from './components/DomainAuthModal';
+import { Cloud, ShieldCheck, Sparkles, X } from 'lucide-react';
 
 export default function App() {
-  const { user, signInWithGoogle, signOutUser, error: authError } = useAuth();
+  const {
+    user,
+    signInWithGoogle,
+    signInWithScholarProfile,
+    signOutUser,
+    error: authError,
+    domainConfigInfo,
+    clearDomainConfigInfo,
+    clearError,
+  } = useAuth();
   const [activeTab, setActiveTab] = useState<ActiveTab>('ingestion');
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'guest'>('guest');
 
@@ -50,6 +61,7 @@ export default function App() {
   const [charts, setCharts] = useState<StructuredChart[]>([]);
   const [retentionRecords, setRetentionRecords] = useState<TopicRetentionRecord[]>([]);
   const [feynmanTopic, setFeynmanTopic] = useState<string>('');
+  const [quizFeedbackTiming, setQuizFeedbackTiming] = useState<FeedbackTiming>('instant');
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
@@ -153,10 +165,12 @@ export default function App() {
     showNotification(`Targeted "${docItem.name}" in Study Generator.`);
   };
 
-  // Dynamic Study Generator Handler (reads user uploaded files)
+  // Dynamic Study Generator Handler (reads uploaded files or custom topics)
   const handleGenerateStudyArtifact = (config: StudyConfig, targetDoc: DocumentItem | null) => {
-    if (documents.length === 0) {
-      showNotification('Please upload a document before generating study materials.');
+    const isCustomTopic = config.sourceMode === 'custom_topic' && config.customTopic;
+
+    if (!isCustomTopic && documents.length === 0) {
+      showNotification('Please upload a document before generating study materials, or switch to Custom Topic mode.');
       return;
     }
 
@@ -164,37 +178,41 @@ export default function App() {
 
     setTimeout(() => {
       try {
-        const docToProcess = targetDoc || documents[0];
-        const generated = generateDynamicStudyMaterials([docToProcess], config);
+        const docToProcess = targetDoc || documents[0] || null;
+        const sourceName = isCustomTopic ? config.customTopic! : (docToProcess ? docToProcess.name : 'Selected Source');
+        const generated = generateDynamicStudyMaterials(docToProcess ? [docToProcess] : [], config);
 
         setIsGenerating(false);
 
         if (config.outputType === 'quiz' && generated.questions) {
+          if (config.feedbackTiming) {
+            setQuizFeedbackTiming(config.feedbackTiming);
+          }
           setQuestions(generated.questions);
           setActiveTab('quiz');
           showNotification(
-            `Dynamically generated ${generated.questions.length} questions from "${docToProcess.name}"!`
+            `Dynamically generated ${generated.questions.length} questions for "${sourceName}"!`
           );
         } else if (config.outputType === 'flashcards' && generated.flashcards) {
           setFlashcards(generated.flashcards);
           setActiveTab('flashcards');
           showNotification(
-            `Dynamically synthesized ${generated.flashcards.length} flashcards from "${docToProcess.name}"!`
+            `Dynamically synthesized ${generated.flashcards.length} flashcards for "${sourceName}"!`
           );
         } else if (config.outputType === 'mindmap' && generated.mindMap) {
           setMindMap(generated.mindMap);
           setActiveTab('mindmap');
-          showNotification(`Dynamically synthesized concept mind map for "${docToProcess.name}"!`);
+          showNotification(`Dynamically synthesized concept mind map for "${sourceName}"!`);
         } else if (config.outputType === 'charts' && generated.charts) {
           setCharts(generated.charts);
           setActiveTab('charts');
-          showNotification(`Dynamically synthesized formula matrix for "${docToProcess.name}"!`);
+          showNotification(`Dynamically synthesized study matrix for "${sourceName}"!`);
         }
       } catch (err) {
         setIsGenerating(false);
         showNotification(err instanceof Error ? err.message : 'Error generating study materials');
       }
-    }, 800);
+    }, 600);
   };
 
   // Quiz Completion Handler with Granular Time Analytics Cloud Sync
@@ -362,10 +380,29 @@ export default function App() {
         </div>
       )}
 
+      {/* Domain Authorization Resolution Assistant Modal */}
+      {domainConfigInfo && (
+        <DomainAuthModal
+          info={domainConfigInfo}
+          onClose={clearDomainConfigInfo}
+          onUseScholarProfile={(email, name) => {
+            signInWithScholarProfile(email, name);
+            showNotification(`⚡ Activated Top Bencher Scholar Profile for ${email || 'scholar'}!`);
+          }}
+        />
+      )}
+
       {/* Auth Error Banner if present */}
       {authError && (
-        <div className="bg-red-950/70 border-b border-red-800 text-red-200 text-xs px-4 py-2 text-center flex items-center justify-center space-x-2">
-          <span>{authError}</span>
+        <div className="bg-red-950/80 border-b border-red-800 text-red-200 text-xs px-4 py-2 text-center flex items-center justify-between">
+          <span className="flex-1 text-center font-medium">{authError}</span>
+          <button
+            onClick={clearError}
+            className="text-red-300 hover:text-white p-1 rounded hover:bg-red-900/50 transition-colors cursor-pointer"
+            title="Dismiss error"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -392,12 +429,25 @@ export default function App() {
                 <strong className="text-white">Multi-Device Cloud Sync Available:</strong> Sign in with Google to synchronize your uploaded files, quiz times, and spaced repetition schedules across laptops and phones.
               </span>
             </div>
-            <button
-              onClick={signInWithGoogle}
-              className="ml-4 shrink-0 font-bold text-indigo-400 hover:text-indigo-300 underline underline-offset-2 cursor-pointer"
-            >
-              Sign In Free →
-            </button>
+            <div className="flex items-center space-x-3 ml-4 shrink-0">
+              <button
+                onClick={signInWithGoogle}
+                className="font-bold text-indigo-400 hover:text-indigo-300 underline underline-offset-2 cursor-pointer"
+              >
+                Sign In Free →
+              </button>
+              <span className="text-slate-600 hidden sm:inline">•</span>
+              <button
+                onClick={() => {
+                  signInWithScholarProfile('k.salunkhe0001@gmail.com', 'Kartik Salunkhe');
+                  showNotification('⚡ Activated Scholar Sandbox Profile with persistent sync!');
+                }}
+                className="hidden sm:inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-800 text-indigo-300 font-semibold cursor-pointer shadow-sm"
+              >
+                <Sparkles className="w-3 h-3 text-indigo-400" />
+                <span>Instant Scholar Sandbox</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -428,6 +478,7 @@ export default function App() {
         {activeTab === 'quiz' && (
           <QuizRunner
             questions={questions}
+            feedbackTiming={quizFeedbackTiming}
             onQuizComplete={handleQuizComplete}
             onNavigateToRetention={() => setActiveTab('retention')}
             onNavigateToFeynman={handleNavigateToFeynman}

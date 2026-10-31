@@ -14,7 +14,7 @@ import {
   BarChart3,
   Filter,
 } from 'lucide-react';
-import { QuizQuestion, QuizSubmission, RetentionCategory } from '../types';
+import { QuizQuestion, QuizSubmission, RetentionCategory, FeedbackTiming } from '../types';
 import {
   calculateRetentionStatus,
   diagnoseQuizMistake,
@@ -24,6 +24,7 @@ import {
 
 interface QuizRunnerProps {
   questions: QuizQuestion[];
+  feedbackTiming?: FeedbackTiming;
   onQuizComplete: (results: {
     topic: string;
     subject: string;
@@ -33,6 +34,7 @@ interface QuizRunnerProps {
     status: RetentionCategory;
     totalDurationSeconds: number;
     questionTimes: Record<number, number>;
+    feedbackTiming?: FeedbackTiming;
   }) => void;
   onNavigateToRetention: () => void;
   onNavigateToFeynman: (topic: string) => void;
@@ -41,6 +43,7 @@ interface QuizRunnerProps {
 
 export const QuizRunner: React.FC<QuizRunnerProps> = ({
   questions,
+  feedbackTiming,
   onQuizComplete,
   onNavigateToRetention,
   onNavigateToFeynman,
@@ -51,11 +54,19 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const [subjectiveInput, setSubjectiveInput] = useState('');
   const [showSubjectiveModal, setShowSubjectiveModal] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
+  const [timingMode, setTimingMode] = useState<FeedbackTiming>(feedbackTiming || 'instant');
+
+  // Keep timingMode in sync if prop changes
+  useEffect(() => {
+    if (feedbackTiming) {
+      setTimingMode(feedbackTiming);
+    }
+  }, [feedbackTiming]);
 
   // Timer states
   const [totalElapsedSeconds, setTotalElapsedSeconds] = useState(0);
   const [questionTimes, setQuestionTimes] = useState<Record<number, number>>({});
-  const [analyticsFilter, setAnalyticsFilter] = useState<'ALL' | 'MISTAKES' | 'TIME_INTENSIVE'>('ALL');
+  const [analyticsFilter, setAnalyticsFilter] = useState<'ALL' | 'MISTAKES' | 'CORRECT' | 'TIME_INTENSIVE'>('ALL');
 
   // Live timer interval: tracks total elapsed seconds & current question seconds
   useEffect(() => {
@@ -101,7 +112,8 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
   const currentSubmission = submissions[currentIndex];
 
   const handleSelectOption = (optionIndex: number) => {
-    if (currentSubmission) return; // Already answered
+    // In instant mode, lock once answered to prevent cheating after seeing explanation
+    if (currentSubmission && timingMode === 'instant') return;
 
     const diagnostic = diagnoseQuizMistake(currentQ, optionIndex);
     const timeSpent = questionTimes[currentIndex] || 1;
@@ -185,6 +197,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
       status,
       totalDurationSeconds: totalElapsedSeconds,
       questionTimes,
+      feedbackTiming: timingMode,
     });
   };
 
@@ -210,6 +223,9 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     const timeSpent = questionTimes[idx] || 0;
     if (analyticsFilter === 'MISTAKES') {
       return sub && !sub.isCorrect;
+    }
+    if (analyticsFilter === 'CORRECT') {
+      return sub && sub.isCorrect;
     }
     if (analyticsFilter === 'TIME_INTENSIVE') {
       return timeSpent >= 30;
@@ -324,7 +340,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             </div>
 
             {/* Filter Buttons */}
-            <div className="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
               <button
                 onClick={() => setAnalyticsFilter('ALL')}
                 className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
@@ -332,6 +348,14 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                 }`}
               >
                 All ({questions.length})
+              </button>
+              <button
+                onClick={() => setAnalyticsFilter('CORRECT')}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
+                  analyticsFilter === 'CORRECT' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Correct ({correctCount})
               </button>
               <button
                 onClick={() => setAnalyticsFilter('MISTAKES')}
@@ -352,7 +376,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
             </div>
           </div>
 
-          {/* List of Questions with Time Analytics */}
+          {/* List of Questions with Time Analytics & Rigorous Derivation Breakdown */}
           <div className="space-y-4">
             {filteredQuestions.map((q) => {
               const qIndex = questions.findIndex((item) => item.id === q.id);
@@ -363,7 +387,7 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
               return (
                 <div
                   key={q.id}
-                  className={`p-4 rounded-xl border space-y-3 transition-all ${
+                  className={`p-4 rounded-xl border space-y-3.5 transition-all ${
                     sub
                       ? isCorrect
                         ? 'bg-slate-950/80 border-emerald-900/60'
@@ -378,13 +402,17 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                         Q{qIndex + 1}
                       </span>
                       <span className="text-xs font-bold text-white">{q.topic}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">({q.subject})</span>
                     </div>
 
                     <div className="flex items-center space-x-2 text-xs">
-                      {/* Time Spent Badge */}
-                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-indigo-950/80 text-indigo-300 border border-indigo-800 font-mono font-semibold">
+                      {/* Time Spent Telemetry Badge */}
+                      <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/80 text-indigo-300 border border-indigo-800 font-mono font-semibold">
                         <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>{formatSecondsHuman(timeSpent)}</span>
+                        <span>{timeSpent}s</span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          ({timeSpent < 15 ? 'Rapid' : timeSpent < 30 ? 'Paced' : 'Intensive'})
+                        </span>
                       </span>
 
                       {/* Correct / Incorrect Badge */}
@@ -407,37 +435,57 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                   </div>
 
                   {/* Question Text */}
-                  <div className="text-xs text-slate-200 leading-relaxed font-medium">
+                  <div className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
                     {q.question}
                   </div>
 
-                  {/* MCQ Options Display */}
+                  {/* MCQ Options Display with Explicit Distractor Feedback */}
                   {q.options && (
-                    <div className="space-y-1.5 pt-1 text-xs">
+                    <div className="space-y-2 pt-1 text-xs">
                       {q.options.map((opt, oIdx) => {
                         const isChosen = sub?.userSelection === oIdx;
                         const isActualCorrect = oIdx === q.correctOptionIndex;
+                        const distractorNotice = q.distractorExplanations?.[oIdx]?.pitfall;
 
                         return (
                           <div
                             key={oIdx}
-                            className={`p-2.5 rounded-lg border flex items-center justify-between text-xs ${
+                            className={`p-3 rounded-lg border flex flex-col space-y-1 text-xs transition-all ${
                               isActualCorrect
-                                ? 'bg-emerald-950/40 border-emerald-600/80 text-emerald-200 font-semibold'
+                                ? 'bg-emerald-950/40 border-emerald-600/80 text-emerald-200 font-semibold shadow-sm'
                                 : isChosen && !isActualCorrect
-                                ? 'bg-red-950/40 border-red-600/80 text-red-200'
-                                : 'bg-slate-900/60 border-slate-800/80 text-slate-400 opacity-60'
+                                ? 'bg-red-950/40 border-red-600/80 text-red-200 shadow-sm'
+                                : 'bg-slate-900/60 border-slate-800/80 text-slate-400 opacity-70'
                             }`}
                           >
-                            <div className="flex items-center space-x-2">
-                              <span className="font-mono font-bold text-[11px]">
-                                {String.fromCharCode(65 + oIdx)}.
-                              </span>
-                              <span>{opt}</span>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-start space-x-2">
+                                <span className="font-mono font-bold text-[11px] shrink-0 mt-0.5">
+                                  {String.fromCharCode(65 + oIdx)}.
+                                </span>
+                                <span className="leading-relaxed">{opt}</span>
+                              </div>
+                              <div className="flex items-center space-x-1.5 shrink-0 ml-2">
+                                {isActualCorrect && (
+                                  <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/80 text-emerald-300 border border-emerald-700">
+                                    <Check className="w-3 h-3" />
+                                    <span>Correct Answer</span>
+                                  </span>
+                                )}
+                                {isChosen && !isActualCorrect && (
+                                  <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-900/80 text-red-300 border border-red-700">
+                                    <XCircle className="w-3 h-3" />
+                                    <span>Your Pick</span>
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            {isActualCorrect && <Check className="w-4 h-4 text-emerald-400 shrink-0" />}
-                            {isChosen && !isActualCorrect && (
-                              <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+
+                            {/* Explicit Distractor Failure Rationale */}
+                            {!isActualCorrect && distractorNotice && (isChosen || !isCorrect) && (
+                              <div className="text-[11px] text-red-300/90 pl-5 font-normal border-t border-red-900/30 pt-1 mt-1">
+                                <strong className="text-red-200">Why Incorrect:</strong> {distractorNotice}
+                              </div>
                             )}
                           </div>
                         );
@@ -445,39 +493,85 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                     </div>
                   )}
 
-                  {/* Step-by-Step Diagnostic Breakdown (if incorrect) */}
-                  {sub && !isCorrect && (
-                    <div className="p-3.5 rounded-lg bg-red-950/20 border border-red-800/60 space-y-2.5 text-xs">
-                      <div className="flex items-center space-x-1.5 font-bold text-red-300">
-                        <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-                        <span>Step-by-Step Error Diagnostic:</span>
+                  {/* Step-by-Step Derivation Breakdown & Diagnostics (Both Correct & Incorrect) */}
+                  {sub && (
+                    <div
+                      className={`p-3.5 rounded-lg border space-y-2.5 text-xs ${
+                        isCorrect
+                          ? 'bg-emerald-950/20 border-emerald-800/50'
+                          : 'bg-red-950/20 border-red-800/60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5 font-bold">
+                          {isCorrect ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span className="text-emerald-300">Flawless Analytical Derivation Verified:</span>
+                            </>
+                          ) : (
+                            <>
+                              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                              <span className="text-red-300">
+                                Derivation Mistake Pinpointed at Step {sub.diagnosedErrorStep || 2}:
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {isCorrect ? 'All axioms validated' : 'Governing rule violated'}
+                        </span>
                       </div>
-                      <p className="text-slate-300 text-[11px] leading-relaxed">
-                        {sub.diagnosedRationale}
-                      </p>
 
-                      {/* Derivation Steps */}
+                      {!isCorrect && sub.diagnosedRationale && (
+                        <p className="text-slate-300 text-[11px] leading-relaxed">
+                          {sub.diagnosedRationale}
+                        </p>
+                      )}
+
+                      {/* Derivation Steps Breakdown */}
                       <div className="space-y-1.5 pt-1">
-                        {q.solutionDerivation.map((s) => (
-                          <div
-                            key={s.stepNumber}
-                            className={`p-2 rounded text-[11px] border ${
-                              s.stepNumber === (sub.diagnosedErrorStep || 2)
-                                ? 'bg-red-950/50 border-red-700 text-red-200 font-medium'
-                                : 'bg-slate-950 border-slate-800 text-slate-400'
-                            }`}
-                          >
-                            <span className="font-bold">
-                              Step {s.stepNumber} ({s.title}):
-                            </span>{' '}
-                            {s.explanation}
-                            {s.stepNumber === (sub.diagnosedErrorStep || 2) && s.commonPitfall && (
-                              <div className="mt-1 text-red-300 font-semibold">
-                                ⚠️ Pitfall: {s.commonPitfall}
+                        {q.solutionDerivation.map((s) => {
+                          const isFlawed = !isCorrect && s.stepNumber === (sub.diagnosedErrorStep || 2);
+                          return (
+                            <div
+                              key={s.stepNumber}
+                              className={`p-2.5 rounded text-[11px] border ${
+                                isFlawed
+                                  ? 'bg-red-950/50 border-red-700 text-red-200 font-medium'
+                                  : isCorrect
+                                  ? 'bg-slate-950/80 border-emerald-950 text-slate-300'
+                                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-200">
+                                  Step {s.stepNumber}: {s.title}
+                                </span>
+                                <span
+                                  className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                                    isFlawed
+                                      ? 'bg-red-900 text-red-200 border border-red-700'
+                                      : 'bg-slate-900 text-slate-400'
+                                  }`}
+                                >
+                                  {isFlawed ? 'Critical Error' : 'Satisfied'}
+                                </span>
                               </div>
-                            )}
-                          </div>
-                        ))}
+                              <div className="mt-0.5">{s.explanation}</div>
+                              {s.formulaOrCode && (
+                                <div className="font-mono text-[10px] text-indigo-300 bg-slate-900 px-2 py-0.5 rounded mt-1">
+                                  {s.formulaOrCode}
+                                </div>
+                              )}
+                              {isFlawed && s.commonPitfall && (
+                                <div className="mt-1.5 text-red-300 font-semibold bg-red-950/40 p-1.5 rounded border border-red-800/50">
+                                  ⚠️ Exam Pitfall Trap: {s.commonPitfall}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
 
                       <div className="text-[11px] text-amber-300 bg-slate-950/80 p-2 rounded border border-amber-900/40">
@@ -494,10 +588,10 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
     );
   }
 
-  // ACTIVE TEST SESSION WITH LIVE TIMERS
+  // ACTIVE TEST SESSION WITH LIVE TIMERS & FEEDBACK MODE CONTROL
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Top Session Progress Bar & Live Timers */}
+      {/* Top Session Progress Bar, Live Timers & Mode Toggle */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="px-2.5 py-1 rounded-md bg-indigo-950 text-indigo-300 border border-indigo-800 text-xs font-semibold">
@@ -509,10 +603,27 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
         </div>
 
         <div className="flex items-center space-x-3">
+          {/* Feedback Timing Mode Indicator & Quick Switcher */}
+          <button
+            onClick={() => setTimingMode((prev) => (prev === 'instant' ? 'after_test' : 'instant'))}
+            title="Click to toggle feedback timing mode"
+            className="hidden sm:inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors cursor-pointer bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-300"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                timingMode === 'instant' ? 'bg-emerald-400 animate-pulse' : 'bg-indigo-400'
+              }`}
+            />
+            <span className="text-slate-400">Mode:</span>
+            <span className="font-bold text-white">
+              {timingMode === 'instant' ? 'Instant Analysis' : 'Exam (Post-Test Results)'}
+            </span>
+          </button>
+
           {/* Live Countdown / Elapsed Timer */}
           <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-950/80 border border-indigo-700/80 font-mono text-xs text-indigo-200 shadow-sm">
             <Timer className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-            <span className="text-slate-400">Elapsed:</span>
+            <span className="text-slate-400">Total:</span>
             <span className="font-bold text-white">{formatSecondsToTimer(totalElapsedSeconds)}</span>
             <span className="text-slate-600">|</span>
             <span className="text-slate-400">Q{currentIndex + 1}:</span>
@@ -533,25 +644,32 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
               {currentQ.type === 'mcq' ? 'Rigorous Multi-Step MCQ' : 'Subjective Derivation Proof'}
             </span>
             {currentSubmission && (
-              <span
-                className={`text-xs px-2.5 py-1 rounded-full font-bold flex items-center space-x-1 ${
-                  currentSubmission.isCorrect
-                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
-                    : 'bg-red-950 text-red-300 border border-red-700'
-                }`}
-              >
-                {currentSubmission.isCorrect ? (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Flawless Derivation</span>
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span>Flaw Detected</span>
-                  </>
-                )}
-              </span>
+              timingMode === 'after_test' ? (
+                <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800 flex items-center space-x-1">
+                  <Check className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Answer Recorded</span>
+                </span>
+              ) : (
+                <span
+                  className={`text-xs px-2.5 py-1 rounded-full font-bold flex items-center space-x-1 ${
+                    currentSubmission.isCorrect
+                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                      : 'bg-red-950 text-red-300 border border-red-700'
+                  }`}
+                >
+                  {currentSubmission.isCorrect ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Flawless Derivation</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Flaw Detected</span>
+                    </>
+                  )}
+                </span>
+              )
             )}
           </div>
 
@@ -566,18 +684,25 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
               const isCorrect = idx === currentQ.correctOptionIndex;
               const hasAnswered = !!currentSubmission;
 
-              // Immediate feedback styling:
-              // Correct option -> Emerald Green
-              // Incorrect selection -> Red
               let optionStyle = 'bg-slate-950/70 border-slate-800 hover:border-slate-700 text-slate-200';
 
               if (hasAnswered) {
-                if (isCorrect) {
-                  optionStyle = 'bg-emerald-950/40 border-emerald-500 text-emerald-200 shadow-lg shadow-emerald-950/50';
-                } else if (isSelected && !isCorrect) {
-                  optionStyle = 'bg-red-950/40 border-red-500 text-red-200 shadow-lg shadow-red-950/50';
+                if (timingMode === 'after_test') {
+                  // Exam Mode: Only show selected state, without revealing correct/incorrect
+                  if (isSelected) {
+                    optionStyle = 'bg-indigo-950/70 border-indigo-500 text-white shadow-md ring-1 ring-indigo-500/40 font-semibold';
+                  } else {
+                    optionStyle = 'bg-slate-950/40 border-slate-900 text-slate-400 opacity-75';
+                  }
                 } else {
-                  optionStyle = 'bg-slate-950/30 border-slate-900 text-slate-500 opacity-60';
+                  // Instant Analysis Mode: Immediately reveal emerald green / red
+                  if (isCorrect) {
+                    optionStyle = 'bg-emerald-950/40 border-emerald-500 text-emerald-200 shadow-lg shadow-emerald-950/50';
+                  } else if (isSelected && !isCorrect) {
+                    optionStyle = 'bg-red-950/40 border-red-500 text-red-200 shadow-lg shadow-red-950/50';
+                  } else {
+                    optionStyle = 'bg-slate-950/30 border-slate-900 text-slate-500 opacity-60';
+                  }
                 }
               }
 
@@ -585,14 +710,15 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                 <button
                   key={idx}
                   onClick={() => handleSelectOption(idx)}
-                  disabled={hasAnswered}
                   className={`w-full text-left p-4 rounded-xl border text-xs sm:text-sm font-medium transition-all flex items-start space-x-3 cursor-pointer ${optionStyle}`}
                 >
                   <span
                     className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 border ${
-                      hasAnswered && isCorrect
+                      hasAnswered && timingMode === 'after_test' && isSelected
+                        ? 'bg-indigo-600 text-white border-indigo-500'
+                        : hasAnswered && timingMode === 'instant' && isCorrect
                         ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                        : hasAnswered && isSelected && !isCorrect
+                        : hasAnswered && timingMode === 'instant' && isSelected && !isCorrect
                         ? 'bg-red-500 text-white border-red-400'
                         : 'bg-slate-900 text-slate-400 border-slate-700'
                     }`}
@@ -600,8 +726,17 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                     {String.fromCharCode(65 + idx)}
                   </span>
                   <div className="flex-1 leading-relaxed">{opt}</div>
-                  {hasAnswered && isCorrect && <Check className="w-5 h-5 text-emerald-400 shrink-0" />}
-                  {hasAnswered && isSelected && !isCorrect && <XCircle className="w-5 h-5 text-red-400 shrink-0" />}
+                  {hasAnswered && timingMode === 'after_test' && isSelected && (
+                    <span className="text-[10px] font-bold text-indigo-400 px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-800">
+                      Selected
+                    </span>
+                  )}
+                  {hasAnswered && timingMode === 'instant' && isCorrect && (
+                    <Check className="w-5 h-5 text-emerald-400 shrink-0" />
+                  )}
+                  {hasAnswered && timingMode === 'instant' && isSelected && !isCorrect && (
+                    <XCircle className="w-5 h-5 text-red-400 shrink-0" />
+                  )}
                 </button>
               );
             })}
@@ -628,113 +763,134 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
           </div>
         )}
 
-        {/* STEP-BY-STEP MISTAKE DIAGNOSTIC PANEL */}
+        {/* Answer Status / Diagnostic Panel */}
         {currentSubmission && (
-          <div
-            className={`rounded-xl border p-5 space-y-4 ${
-              currentSubmission.isCorrect
-                ? 'bg-emerald-950/20 border-emerald-800/80'
-                : 'bg-red-950/20 border-red-800/80'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center space-x-2">
-                {currentSubmission.isCorrect ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
-                )}
-                <div>
-                  <h3 className="text-sm font-bold text-white">
-                    {currentSubmission.isCorrect
-                      ? 'Flawless Derivation Verified'
-                      : `Critical Derivation Flaw Pinpointed at Step ${currentSubmission.diagnosedErrorStep || 2}`}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {currentSubmission.isCorrect
-                      ? 'All intermediate operators and contextual constraints satisfied.'
-                      : currentSubmission.diagnosedRationale}
-                  </p>
+          timingMode === 'after_test' ? (
+            /* Exam Mode Notice: Diagnostics Held until Submission */
+            <div className="rounded-xl border border-indigo-900/60 bg-indigo-950/20 p-4 text-xs text-indigo-200 flex items-start space-x-2.5 shadow-sm">
+              <div className="p-1.5 rounded-lg bg-indigo-950 border border-indigo-800 text-indigo-400 shrink-0 mt-0.5">
+                <Check className="w-4 h-4" />
+              </div>
+              <div className="flex-1">
+                <div className="font-bold text-white flex items-center justify-between">
+                  <span>Answer Recorded for Question {currentIndex + 1}</span>
+                  <span className="font-mono text-indigo-300 text-[11px]">
+                    ⏱️ {formatSecondsHuman(currentSubmission.timeSpentSeconds || 0)}
+                  </span>
+                </div>
+                <p className="text-slate-400 text-[11px] mt-1 leading-relaxed">
+                  Exam Simulation Active: Correctness and step-by-step mistake diagnostics are strictly held for your comprehensive post-test performance breakdown. You may change your choice before advancing, or click Next Question to proceed.
+                </p>
+              </div>
+            </div>
+          ) : (
+            /* Instant Analysis Mode: Step-by-Step Diagnostic Panel */
+            <div
+              className={`rounded-xl border p-5 space-y-4 ${
+                currentSubmission.isCorrect
+                  ? 'bg-emerald-950/20 border-emerald-800/80'
+                  : 'bg-red-950/20 border-red-800/80'
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center space-x-2">
+                  {currentSubmission.isCorrect ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+                  )}
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      {currentSubmission.isCorrect
+                        ? 'Flawless Derivation Verified'
+                        : `Critical Derivation Flaw Pinpointed at Step ${currentSubmission.diagnosedErrorStep || 2}`}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {currentSubmission.isCorrect
+                        ? 'All intermediate operators and contextual constraints satisfied.'
+                        : currentSubmission.diagnosedRationale}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Time spent on this question */}
+                <div className="text-xs font-mono px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-indigo-300 shrink-0 flex items-center space-x-1">
+                  <Clock className="w-3 h-3 text-indigo-400" />
+                  <span>{formatSecondsHuman(currentSubmission.timeSpentSeconds || 0)}</span>
                 </div>
               </div>
 
-              {/* Time spent on this question */}
-              <div className="text-xs font-mono px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-indigo-300 shrink-0 flex items-center space-x-1">
-                <Clock className="w-3 h-3 text-indigo-400" />
-                <span>{formatSecondsHuman(currentSubmission.timeSpentSeconds || 0)}</span>
-              </div>
-            </div>
-
-            {/* Granular Step-by-Step Derivation Breakdown */}
-            <div className="space-y-2.5 pt-2">
-              <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                Step-by-Step Derivation & Mistake Audit:
-              </div>
-              <div className="space-y-2">
-                {currentSubmission.stepBreakdown.map((step) => {
-                  const stepDetail = currentQ.solutionDerivation.find((s) => s.stepNumber === step.stepNumber);
-                  return (
-                    <div
-                      key={step.stepNumber}
-                      className={`p-3 rounded-lg border text-xs ${
-                        step.status === 'correct'
-                          ? 'bg-slate-950/70 border-emerald-900/60 text-slate-300'
-                          : step.status === 'flawed'
-                          ? 'bg-red-950/50 border-red-700 text-red-200'
-                          : 'bg-slate-950/30 border-slate-900 text-slate-500'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold flex items-center space-x-1.5">
-                          {step.status === 'correct' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                          {step.status === 'flawed' && <XCircle className="w-3.5 h-3.5 text-red-400" />}
-                          <span>
-                            Step {step.stepNumber}: {stepDetail?.title || `Derivation Segment ${step.stepNumber}`}
+              {/* Granular Step-by-Step Derivation Breakdown */}
+              <div className="space-y-2.5 pt-2">
+                <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Step-by-Step Derivation & Mistake Audit:
+                </div>
+                <div className="space-y-2">
+                  {currentSubmission.stepBreakdown.map((step) => {
+                    const stepDetail = currentQ.solutionDerivation.find((s) => s.stepNumber === step.stepNumber);
+                    return (
+                      <div
+                        key={step.stepNumber}
+                        className={`p-3 rounded-lg border text-xs ${
+                          step.status === 'correct'
+                            ? 'bg-slate-950/70 border-emerald-900/60 text-slate-300'
+                            : step.status === 'flawed'
+                            ? 'bg-red-950/50 border-red-700 text-red-200'
+                            : 'bg-slate-950/30 border-slate-900 text-slate-500'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold flex items-center space-x-1.5">
+                            {step.status === 'correct' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                            {step.status === 'flawed' && <XCircle className="w-3.5 h-3.5 text-red-400" />}
+                            <span>
+                              Step {step.stepNumber}: {stepDetail?.title || `Derivation Segment ${step.stepNumber}`}
+                            </span>
                           </span>
-                        </span>
-                        <span
-                          className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded ${
-                            step.status === 'correct'
-                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                              : step.status === 'flawed'
-                              ? 'bg-red-950 text-red-300 border border-red-700 animate-pulse'
-                              : 'bg-slate-900 text-slate-500'
-                          }`}
-                        >
-                          {step.status === 'flawed' ? 'FATAL LOGICAL BREAK' : step.status.toUpperCase()}
-                        </span>
+                          <span
+                            className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded ${
+                              step.status === 'correct'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                : step.status === 'flawed'
+                                ? 'bg-red-950 text-red-300 border border-red-700 animate-pulse'
+                                : 'bg-slate-900 text-slate-500'
+                            }`}
+                          >
+                            {step.status === 'flawed' ? 'FATAL LOGICAL BREAK' : step.status.toUpperCase()}
+                          </span>
+                        </div>
+
+                        {stepDetail?.formulaOrCode && (
+                          <div className="font-mono text-[11px] bg-slate-900/80 px-2.5 py-1 rounded my-1 text-indigo-300">
+                            {stepDetail.formulaOrCode}
+                          </div>
+                        )}
+
+                        <p className="text-[11px] text-slate-300 leading-relaxed mt-1">{step.critique}</p>
+
+                        {step.status === 'flawed' && stepDetail?.commonPitfall && (
+                          <div className="mt-2 p-2 rounded bg-red-950/60 border border-red-800 text-[11px] text-red-300">
+                            <strong className="text-red-200">Exam Pitfall Trap:</strong> {stepDetail.commonPitfall}
+                          </div>
+                        )}
                       </div>
+                    );
+                  })}
+                </div>
+              </div>
 
-                      {stepDetail?.formulaOrCode && (
-                        <div className="font-mono text-[11px] bg-slate-900/80 px-2.5 py-1 rounded my-1 text-indigo-300">
-                          {stepDetail.formulaOrCode}
-                        </div>
-                      )}
-
-                      <p className="text-[11px] text-slate-300 leading-relaxed mt-1">{step.critique}</p>
-
-                      {step.status === 'flawed' && stepDetail?.commonPitfall && (
-                        <div className="mt-2 p-2 rounded bg-red-950/60 border border-red-800 text-[11px] text-red-300">
-                          <strong className="text-red-200">Exam Pitfall Trap:</strong> {stepDetail.commonPitfall}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+              {/* Why the Overall Result Collapsed */}
+              <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs">
+                <span className="font-bold text-amber-400 flex items-center space-x-1 mb-1">
+                  <Flame className="w-3.5 h-3.5" />
+                  <span>Why the Overall Result Collapsed:</span>
+                </span>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  {currentQ.conceptualCollapseWarning}
+                </p>
               </div>
             </div>
-
-            {/* Why the Overall Result Collapsed */}
-            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs">
-              <span className="font-bold text-amber-400 flex items-center space-x-1 mb-1">
-                <Flame className="w-3.5 h-3.5" />
-                <span>Why the Overall Result Collapsed:</span>
-              </span>
-              <p className="text-slate-300 text-[11px] leading-relaxed">
-                {currentQ.conceptualCollapseWarning}
-              </p>
-            </div>
-          </div>
+          )
         )}
 
         {/* Navigation Actions */}
@@ -756,7 +912,11 @@ export const QuizRunner: React.FC<QuizRunnerProps> = ({
                 : 'bg-slate-800 text-slate-500 cursor-not-allowed'
             }`}
           >
-            <span>{currentIndex === questions.length - 1 ? 'Complete & Grade Session' : 'Next Question'}</span>
+            <span>
+              {currentIndex === questions.length - 1
+                ? 'Submit Test & View Full Diagnostics'
+                : 'Next Question'}
+            </span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
